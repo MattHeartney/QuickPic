@@ -10,11 +10,13 @@ import android.graphics.Matrix;
 import android.graphics.drawable.BitmapDrawable;
 import android.media.ExifInterface;
 import android.net.Uri;
+import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Environment;
 import android.provider.MediaStore;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.ImageView;
@@ -24,23 +26,38 @@ import com.bumptech.glide.Glide;
 import com.bumptech.glide.load.resource.bitmap.GlideBitmapDrawable;
 import com.bumptech.glide.request.animation.GlideAnimation;
 import com.bumptech.glide.request.target.SimpleTarget;
+import com.dropbox.client2.DropboxAPI;
+import com.dropbox.client2.android.AndroidAuthSession;
+import com.dropbox.client2.session.AppKeyPair;
 import com.google.android.gms.common.ConnectionResult;
+import com.google.android.gms.common.GoogleApiAvailability;
 import com.google.android.gms.common.api.GoogleApiClient;
 import com.google.android.gms.common.api.ResultCallback;
 import com.google.android.gms.drive.Drive;
 import com.google.android.gms.drive.DriveApi;
 import com.google.android.gms.drive.DriveContents;
+import com.google.android.gms.drive.DriveFolder;
 import com.google.android.gms.drive.MetadataChangeSet;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.io.OutputStreamWriter;
+import java.io.Writer;
 
 import javax.inject.Inject;
 
+import butterknife.BindView;
+import butterknife.ButterKnife;
+import butterknife.OnClick;
+
 import static android.R.attr.width;
 import static android.media.ExifInterface.*;
+import static android.util.Log.VERBOSE;
 import static mh.quickpic.R.attr.height;
 
 /**
@@ -50,116 +67,36 @@ import static mh.quickpic.R.attr.height;
  *  - Pic Zip
  */
 
-public class MainActivity extends AppCompatActivity implements GoogleApiClient.OnConnectionFailedListener{
+public class MainActivity extends AppCompatActivity {
 
     private static final int activityCode = 1148;
 
-    private Button selectButton;
-    private Button rotateButton;
-    private Button saveButton;
-    private ImageView imageHolder;
+    @BindView(R.id.image_holder) protected ImageView imageHolder;
 
-    //TODO break GoogleAPIClient into a manager class
-    private GoogleApiClient client;
     private Bitmap imageData;
 
-    ResultCallback<DriveApi.DriveContentsResult> contentsCallback = new
-            ResultCallback<DriveApi.DriveContentsResult>() {
-                @Override
-                public void onResult(DriveApi.DriveContentsResult result) {
-                    if (!result.getStatus().isSuccess()) {
-                        // Handle error
-                        return;
-                    }
-
-                    DriveContents data = result.getDriveContents();
-                    OutputStream out = null;
-                    try {
-                        out = data.getOutputStream();
-                        imageData.compress(Bitmap.CompressFormat.PNG, 100, out);
-                    } catch (Exception e) { e.printStackTrace(); }
-                    finally {
-                        try {
-                            out.close();
-
-                            MetadataChangeSet metadataChangeSet = new MetadataChangeSet.Builder()
-                                    .setMimeType("image/png").build();
-                            IntentSender intentSender = Drive.DriveApi
-                                    .newCreateFileActivityBuilder()
-                                    .setInitialMetadata(metadataChangeSet)
-                                    .setInitialDriveContents(data)
-                                    .build(client);
-                            try {
-                                startIntentSenderForResult(intentSender, 1, null, 0, 0, 0);
-                            } catch (IntentSender.SendIntentException e) {
-                                e.printStackTrace();
-                                // Handle the exception
-                            }
-                        } catch (Exception e) { e.printStackTrace(); }
-                    }
-                }
-            };
+    @Inject DropboxClient dropboxClient;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
         setContentView(R.layout.activity_main);
-        imageHolder = (ImageView)findViewById(R.id.image_holder);
-
-        generateGoogleAPI();
-
-        generateBottomBar();
+        ButterKnife.bind(this);
+        ((BaseApplication)getApplication()).getDaggerComponent().inject(this);
     }
 
-    private void generateGoogleAPI() {
-        client = new GoogleApiClient.Builder(this)
-                .enableAutoManage(this,
-                        this)
-                .addApi(Drive.API)
-                .addScope(Drive.SCOPE_FILE)
-                .build();
-        client.connect();
-    }
-
-    public void onConnectionFailed(ConnectionResult result) {
-        //TODO
-        Toast.makeText(this, "Stuff broke m8", Toast.LENGTH_SHORT).show();
-    }
-
-    /**
-     * Assign bottom bar variables and actions
-     * //TODO move to an extra Editor object with customizable actions
-     */
-    private void generateBottomBar() {
-        selectButton = (Button)findViewById(R.id.select_image_button);
-        rotateButton = (Button)findViewById(R.id.rotate_image_button);
-        saveButton   = (Button)findViewById(R.id.save_image_button);
-
-        selectButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                select();
-            }
-        });
-        rotateButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                rotate();
-            }
-        });
-        saveButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                save();
-            }
-        });
+    @Override
+    protected void onResume() {
+        super.onResume();
+        dropboxClient.onResumeConnect();
     }
 
     /**
      * Open the camera roll and import the selected image on return.
      */
-    private void select() {
+    @OnClick(R.id.select_image_button)
+    protected void select() {
         Intent intent;
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
@@ -173,6 +110,12 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.O
         startActivityForResult(intent, activityCode);
     }
 
+    /**
+     * Recieves the camera roll's result and stores it
+     * @param requestCode sorts this
+     * @param resultCode
+     * @param resultData
+     */
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent resultData) {
 
@@ -197,7 +140,8 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.O
      * Rotates the image by 90 degrees
      * //TODO think up a way to chose rotation direction
      */
-    private void rotate() {
+    @OnClick(R.id.rotate_image_button)
+    protected void rotate() {
         Matrix matrix = new Matrix();
         matrix.postRotate(90);
         imageData = Bitmap.createBitmap(imageData, 0, 0, imageData.getWidth(), imageData.getHeight(), matrix, true);
@@ -209,9 +153,8 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.O
      * Save the image to the camera roll
      * //TODO save this online so I can access from my computer directly
      */
-    private void save() {
-        Drive.DriveApi.newDriveContents(client)
-                .setResultCallback(contentsCallback);
-        Toast.makeText(this, "SAVE", Toast.LENGTH_SHORT).show();
+    @OnClick(R.id.save_image_button)
+    protected void save() {
+        dropboxClient.saveBitmap(imageData);
     }
 }
