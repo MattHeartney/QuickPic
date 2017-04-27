@@ -4,7 +4,7 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    tools:context="mh.quickpic.MainActivity"
+    tools:context="mh.quickpic.SelectImageActivity"
     android:orientation="vertical">
 
     <ImageView
@@ -30,6 +30,13 @@
             android:layout_width="0dp"
             android:layout_height="50dp"
             android:layout_weight="1" />
+
+        <Button
+            android:id="@+id/crop_image_button"
+            android:text="Crop"
+            android:layout_width="0dp"
+            android:layout_height="50dp"
+            android:layout_weight="1"/>
 
         <Button
             android:id="@+id/save_image_button"

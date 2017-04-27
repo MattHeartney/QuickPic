@@ -15,10 +15,10 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 
-import javax.inject.Inject;
-
 /**
  * Created by matt on 4/14/17.
+ *
+ * Handles the interactions with the Dropbox API.
  */
 
 public class DropboxClient {

@@ -4,6 +4,8 @@ import android.app.Application;
 
 /**
  * Created by matt on 4/19/17.
+ *
+ * Quick application override to allow Dagger.
  */
 
 public class BaseApplication extends Application {

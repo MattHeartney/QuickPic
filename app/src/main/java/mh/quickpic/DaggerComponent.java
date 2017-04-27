@@ -12,6 +12,5 @@ import dagger.Component;
 @Component(modules = { DaggerModule.class })
 public interface DaggerComponent {
     // allow to inject into our Main class
-    // method name not important
-    void inject(MainActivity main);
+    void inject(SelectImageActivity main);
 }
